@@ -1,0 +1,6 @@
+easyocr
+flask
+boto3
+pillow
+opencv-python
+flask_sqlalchemy
