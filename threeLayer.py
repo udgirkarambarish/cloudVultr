@@ -9,9 +9,8 @@ import fitz  # PyMuPDF for PDF metadata
 from datetime import datetime, timedelta
 import easyocr
 import google.generativeai as genai
-import cv2
 from pyzbar.pyzbar import decode
-import numpy as np
+import tensorflow as tf  # TensorFlow Lite specific import
 
 # Initialize the Gemini API with the hardcoded API key
 genai.configure(api_key='AIzaSyAIlrYllmYs9Lhjt_CaLa4-tTVJ-7CcyNA')
@@ -27,19 +26,29 @@ def layerOne(path, score):
         image = image.astype('float32') / 255  # Normalize to [0, 1]
         return image
 
-    # Load the trained model
-    model = load_model("fake_invoice_detection_model.h5")
+    # Load the TensorFlow Lite model
+    interpreter = tf.lite.Interpreter(model_path="model.tflite")
+    interpreter.allocate_tensors()
 
-    # Function to predict if an image is fake or authentic
+    # Function to predict if an image is fake or authentic using TensorFlow Lite
     def predict_fake_or_authentic(image_path, curr_score):
         image = preprocess_image(image_path)
         if image is None:
             return "Image could not be processed.", score
         
-        # Expand image dimensions to match the model's input shape
-        image = np.expand_dims(image, axis=0)  # Add batch dimension
-        prediction = model.predict(image)
+        # Prepare the input tensor
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
         
+        image = np.expand_dims(image, axis=0)  # Add batch dimension
+        image = np.array(image, dtype=np.float32)  # Ensure correct dtype for TensorFlow Lite
+        
+        interpreter.set_tensor(input_details[0]['index'], image)
+        interpreter.invoke()
+        
+        # Get the prediction result
+        prediction = interpreter.get_tensor(output_details[0]['index'])
+
         # If prediction > 0.5, classify as 'Fake'; otherwise, 'Authentic'
         if prediction[0][0] > 0.5:
             return "Fake", curr_score
