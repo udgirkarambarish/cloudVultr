@@ -1,6 +1,10 @@
-easyocr
-flask
-boto3
-pillow
+Flask
 opencv-python
-flask_sqlalchemy
+numpy
+Pillow
+PyMuPDF
+easyocr
+google-generativeai
+pyzbar
+tensorflow-cpu
+tensorflow
