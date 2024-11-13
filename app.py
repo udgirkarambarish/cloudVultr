@@ -125,46 +125,25 @@ def verification():
 # Run the app
 if __name__ == '__main__':
     app.run(debug=True, host='45.32.19.96', port=5000)
+    
 import os
-
 import cv2
-
 import numpy as np
-
-from tensorflow.keras.models import load_model
-
 from PIL import Image
-
-from PIL.ExifTags import TAGS
-
 import datetime
-
 import fitz  # PyMuPDF for PDF metadata
-
 from datetime import datetime, timedelta
-
 import easyocr
-
 import google.generativeai as genai
-
-import cv2
-
 from pyzbar.pyzbar import decode
-
-import numpy as np
-
-
+import tensorflow as tf
 
 # Initialize the Gemini API with the hardcoded API key
-
 genai.configure(api_key='AIzaSyAIlrYllmYs9Lhjt_CaLa4-tTVJ-7CcyNA')
-
-
 
 def layerOne(path, score):
 
     # Preprocess images by resizing them to 224x224 and normalizing them
-
     def preprocess_image(image_path):
 
         image = cv2.imread(image_path)
@@ -180,15 +159,12 @@ def layerOne(path, score):
         return image
 
 
-
-    # Load the trained model
-
-    model = load_model("fake_invoice_detection_model.h5")
-
+    # Load the TensorFlow Lite model
+    interpreter = tf.lite.Interpreter(model_path="model.tflite")
+    interpreter.allocate_tensors()
 
 
     # Function to predict if an image is fake or authentic
-
     def predict_fake_or_authentic(image_path, curr_score):
 
         image = preprocess_image(image_path)
@@ -197,18 +173,23 @@ def layerOne(path, score):
 
             return "Image could not be processed.", score
 
-        
-
         # Expand image dimensions to match the model's input shape
-
         image = np.expand_dims(image, axis=0)  # Add batch dimension
 
-        prediction = model.predict(image)
+        # Set up TensorFlow Lite input and output details
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
 
-        
+        # Set the input tensor with the preprocessed image
+        interpreter.set_tensor(input_details[0]['index'], image)
+
+        # Run inference
+        interpreter.invoke()
+
+        # Get the prediction result
+        prediction = interpreter.get_tensor(output_details[0]['index'])
 
         # If prediction > 0.5, classify as 'Fake'; otherwise, 'Authentic'
-
         if prediction[0][0] > 0.5:
 
             return "Fake", score
@@ -220,9 +201,7 @@ def layerOne(path, score):
             return "Authentic", score
 
 
-
     # Example usage: Test a new image
-
     curr_score = 0
 
     image_path = path
@@ -230,11 +209,9 @@ def layerOne(path, score):
     result, curr_score = predict_fake_or_authentic(image_path, curr_score)
 
 
-
     print(f"The image is: {result}")
 
     print(f"Current score: {curr_score}")
-
 
 
     return score + curr_score
