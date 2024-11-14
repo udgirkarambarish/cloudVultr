@@ -2,7 +2,8 @@
 
 To run this application on your machine or server with your own IP address, you will need to update the `host` parameter in the code to reflect your specific IP.
 
-## Steps to Run
+## STEPS TO RUN
+
 1. git clone <repository_url>
    cd <repository_folder>
 
