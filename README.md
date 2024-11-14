@@ -3,37 +3,44 @@
 To run this application on your machine or server with your own IP address, you will need to update the `host` parameter in the code to reflect your specific IP.
 
 ## Steps to Run
+1. git clone <repository_url>
+   cd <repository_folder>
 
-1. **Locate the Code Section**  
-   Find the following code block at the bottom of the application file:
+2. Set Up Virtual Environment 
+   python3 -m venv myenv
+   source myenv/bin/activate    # On Linux/Mac
+   myenv\scripts\activate        #On Windows
 
-    ```python
-    # Run the app
-    if __name__ == '__main__':
-        app.run(debug=True, host='45.32.19.96', port=5000)
-    ```
+3. Installation
+   pip install -r requirements.txt
 
-2. **Modify the IP Address**  
-   Replace `'45.32.19.96'` with your own IP address:
+4. Configure Environment Variables
+   export FLASK_APP=app.py
+   export FLASK_ENV=development     # For development mode
+   export DATABASE_URL=mysql://<user>:<password>@<host>/<database>
+   export AWS_ACCESS_KEY_ID=<your_aws_access_key>
+   export AWS_SECRET_ACCESS_KEY=<your_aws_secret_key>
 
-    ```python
-    # Run the app with your IP
-    if __name__ == '__main__':
-        app.run(debug=True, host='YOUR_IP_ADDRESS', port=5000)
-    ```
+   Modify IP Address 
+   python
+   # Run the app with your Ip
+     if __name__ == '__main__':
+         app.run(debug=True,
+     host='YOUR_IP_ADDRESS', port=5000)
 
-   Replace `YOUR_IP_ADDRESS` with the IP address of the machine where you want the Flask app to be accessible.
+5. Initialise The Database
+   flask db init
+   flask db migrate
+   flask db upgrade
 
-3. **Run the Application**  
-   After making the change, save the file and run it to start the application on your specified IP.
+6. Run The App Locally 
+   flask run
 
-## Installation
+7. OR Deploy With Gunicorn (Recommended)
+   sudo fuser -k 8000/tcp
+   gunicorn --workers 4 --bind 0.0.0.0:8000 app:app
 
-To install the required dependencies for this project, run the following command:
-
-```bash
-pip install -r requirements.txt
-```
+8. Access The App On Your Server IP Address or http://localhost:8000
 
 ### Known Issues with TensorFlow and GPU Compatibility
 
