@@ -33,3 +33,12 @@ To install the required dependencies for this project, run the following command
 
 ```bash
 pip install -r requirements.txt
+```
+
+### Known Issues with TensorFlow and GPU Compatibility
+
+Our project encountered a challenge with TensorFlow. The primary issue relates to TensorFlow’s attempt to utilize GPU acceleration. While we tried disabling GPU to force TensorFlow to run on the CPU, the application still seeks a GPU-accelerated environment. This results in potential performance issues for our Flask app.
+
+### Current Limitations
+
+Our web application is accessible at [http://65.20.76.106:8000/](http://65.20.76.106:8000/). However, **User registration and login functionalities are currently not working due to GPU problem**.
