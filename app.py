@@ -45,74 +45,69 @@ def get_pdf_from_s3(bucket_name, object_key):
 
 @app.route('/verification', methods=['GET', 'POST'])
 def verification():
-    # Initialize score variable
-    score = 0
-
-    # Fetch the most recent file from the 'bills' S3 bucket
+    result_status = ''
     bucket_name = 'bills'
-    response = s3.list_objects_v2(Bucket=bucket_name, Prefix='', MaxKeys=1, Delimiter='/')
-    if 'Contents' in response:
-        # Get the most recent file (sorted by LastModified)
-        most_recent_file = sorted(response['Contents'], key=lambda x: x['LastModified'], reverse=True)[0]
-        file_key = most_recent_file['Key']
 
-        # Download the file from S3 to the current directory
-        file_name = secure_filename(file_key.split('/')[-1])
-        local_path = os.path.join(os.getcwd(), file_name)
-        s3.download_file(bucket_name, file_key, local_path)
+    try:
+        # Fetch the most recent file from the 'bills' bucket
+        response = s3.list_objects_v2(Bucket=bucket_name, Prefix='', MaxKeys=1, Delimiter='/')
+        if 'Contents' in response:
+            # Get the most recent file
+            most_recent_file = sorted(response['Contents'], key=lambda x: x['LastModified'], reverse=True)[0]
+            file_key = most_recent_file['Key']
 
-        # Check if the file is a PDF
-        if file_name.lower().endswith('.pdf'):
-            # Process the PDF file with layerTwo
-            score = layerTwo(local_path)
-            
-            # If score == 35, move to 'authenticate', else move to 'fake'
-            if score == 35:
-                s3.copy_object(Bucket='authenticate', CopySource={'Bucket': 'bills', 'Key': file_key}, Key=file_key)
-                s3.delete_object(Bucket='bills', Key=file_key)
+            print(f"Most recent file key: {file_key}")  # Debug
+
+            # Download the file
+            file_name = secure_filename(file_key.split('/')[-1])
+            local_path = os.path.join(os.getcwd(), file_name)
+            s3.download_file(bucket_name, file_key, local_path)
+
+            # Process the file based on type
+            if file_name.lower().endswith('.pdf'):
+                score = layerTwo(local_path)
+                target_bucket = 'authentic' if score else 'fake'
+            elif file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                score1 = layerOne(local_path)
+                score2 = layerTwo(local_path)
+                score3 = layerThree(local_path)
+                target_bucket = 'authentic' if score1 or score2 and score3 else 'fake'
             else:
-                s3.copy_object(Bucket='fake', CopySource={'Bucket': 'bills', 'Key': file_key}, Key=file_key)
-                s3.delete_object(Bucket='bills', Key=file_key)
-        
-        # If the file is an image, process through all layers
-        elif file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-            score = layerOne(local_path, score)
-            score = layerTwo(local_path, score)
-            score = layerThree(local_path, score)
-            
-            # If score > 65, move to 'authenticate', else move to 'fake'
-            if score > 65:
-                s3.copy_object(Bucket='authenticate', CopySource={'Bucket': 'bills', 'Key': file_key}, Key=file_key)
-                s3.delete_object(Bucket='bills', Key=file_key)
-            else:
-                s3.copy_object(Bucket='fake', CopySource={'Bucket': 'bills', 'Key': file_key}, Key=file_key)
-                s3.delete_object(Bucket='bills', Key=file_key)
+                raise ValueError("Unsupported file type")
 
-        # Prepare the results to send to the template
-        result_status = 'authentic' if score > 35 else 'fake'
-        result = {
-            'file': file_name,
-            'status': result_status,
-            'score': score
-        }
+            # Copy and delete the file
+            print(f"Copying file to bucket: {target_bucket}")  # Debug
+            s3.copy_object(Bucket=target_bucket, CopySource={'Bucket': bucket_name, 'Key': file_key}, Key=file_key)
+            s3.delete_object(Bucket=bucket_name, Key=file_key)
+            result_status = target_bucket
+        else:
+            print("No files found in the 'bills' bucket")
+            return render_template('verification.html', results=None)
 
+        result = {'file': file_name, 'status': result_status}
         return render_template('verification.html', results=[result])
 
-    # If no file is found
+    except botocore.exceptions.ClientError as e:
+        print(f"AWS ClientError: {e}")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+
     return render_template('verification.html', results=None)
 
+
 # In layerOne function:
-def layerOne(path, score):
+def layerOne(path):
     import numpy as np
     import tensorflow as tf
+    import cv2  # Ensure OpenCV is imported for image processing
 
     # Extract bucket name and object key from the S3 path
     try:
         s3_path_parts = path.replace("s3://", "").split("/", 1)
         bucket_name, object_key = s3_path_parts
     except ValueError:
-        return "Invalid S3 path format", score
-    
+        return "Invalid S3 path format"
+
     # Function to preprocess image
     def preprocess_image(image_data):
         # Convert byte data to a NumPy array
@@ -140,11 +135,11 @@ def layerOne(path, score):
 
 
     # Predict authenticity of the image
-    def predict_image(bucket_name, object_key, curr_score):
+    def predict_image(bucket_name, object_key):
         # Fetch and preprocess the image
         image_data = get_image_from_s3(bucket_name, object_key)
         if not image_data:
-            return "Image not found in S3.", curr_score
+            return "Image not found in S3."
         image = preprocess_image(image_data)  # Assumes you have a preprocess_image function
         image = np.expand_dims(image, axis=0)
 
@@ -159,26 +154,25 @@ def layerOne(path, score):
 
         if prediction > 0.5:
             print("complete 1 -------------------------------------------------------------------------------------------")
-            return curr_score
+            return 0  # No change to score, returning as it is
         else:
-            curr_score += 35
             print("complete 1 -------------------------------------------------------------------------------------------")
-            return curr_score
+            return 1  # Add 35 to score when prediction is low
 
-    result, curr_score = predict_image(bucket_name, object_key, score)
-    print(f"LayerOne Result: {result}, Updated Score: {curr_score}")
+    # Update curr_score using the result of predict_image
+    score = predict_image(bucket_name, object_key)
     print("complete 1 -------------------------------------------------------------------------------------------")
 
-    return curr_score
+    return score
+
 
 # Main function to process the file
-def layerTwo(path, curr_score):
+def layerTwo(path):
     import os
     from PIL import Image
     from PIL.ExifTags import TAGS
     from datetime import datetime, timedelta
     import fitz  # PyMuPDF
-    import boto3
     from werkzeug.utils import secure_filename
 
     # Function to detect file type
@@ -190,7 +184,7 @@ def layerTwo(path, curr_score):
         return None
 
     # Function to extract image metadata
-    def get_image_metadata(image_path, curr_score):
+    def get_image_metadata(image_path):
         metadata = {}
         try:
             # Open the image and extract EXIF data
@@ -213,16 +207,15 @@ def layerTwo(path, curr_score):
             threshold = timedelta(hours=2)
             if time_diff > threshold:
                 metadata["SuspiciousModification"] = f"Image modified {time_diff} after creation."
+                return 0
             else:
                 metadata["SuspiciousModification"] = "Image seems authentic."
-                curr_score += 35  # Increase score for authenticity
+                return 1  # Increase score for authenticity
         except Exception as e:
             metadata["Error"] = f"Error fetching metadata: {e}"
 
-        return curr_score
-
     # Function to extract PDF metadata
-    def check_pdf_metadata(file_path, curr_score):
+    def check_pdf_metadata(file_path):
         suspicious_metadata = []
         try:
             doc = fitz.open(file_path)
@@ -240,8 +233,9 @@ def layerTwo(path, curr_score):
 
                     if datetime.now() - mod_date < timedelta(days=30):
                         suspicious_metadata.append("Document modified recently.")
+                        return 0  # Return no score change for suspicious edits
                     else:
-                        curr_score += 35
+                        return 1  # Return 35 for a document that seems authentic
                 except Exception as e:
                     print(f"Error parsing modDate: {e}")
 
@@ -251,7 +245,7 @@ def layerTwo(path, curr_score):
         except Exception as e:
             print(f"Error processing PDF metadata: {e}")
 
-        return curr_score
+        return 0
 
     # Main function to process the file
     if path.startswith("s3://"):  # Check if the path is an S3 URL
@@ -259,26 +253,42 @@ def layerTwo(path, curr_score):
             local_file_path = download_s3_file(path)
         except ValueError as e:
             print(f"Error: {e}")
-            return curr_score  # Return the score without modification in case of an error
+            return 0  # Return curr_score without modification in case of error
     else:
         local_file_path = path
 
     file_type = detect_file_type(local_file_path)
     if file_type == 'pdf':
-        curr_score = check_pdf_metadata(local_file_path, curr_score)
+        return check_pdf_metadata(local_file_path)
     elif file_type == 'image':
-        curr_score = get_image_metadata(local_file_path, curr_score)
+        return get_image_metadata(local_file_path)
+    else:
+        print("Unsupported file format.")
+
+    # Main function to process the file
+    if path.startswith("s3://"):  # Check if the path is an S3 URL
+        try:
+            local_file_path = download_s3_file(path)
+        except ValueError as e:
+            print(f"Error: {e}")
+            return 0  # Return the score without modification in case of an error
+    else:
+        local_file_path = path
+
+    file_type = detect_file_type(local_file_path)
+    if file_type == 'pdf':
+        return check_pdf_metadata(local_file_path)
+    elif file_type == 'image':
+        return get_image_metadata(local_file_path)
     else:
         print("Unsupported file format.")
 
     print("complete 2 -------------------------------------------------------------------------------------------")
 
-    return curr_score
+def layerThree(path):
 
-def layerThree(path, score):
     # Initialize the EasyOCR Reader for English
     reader = easyocr.Reader(['en'])
-    curr_score = 0
 
     # Function to enhance the image for OCR and QR code extraction
     def enhance_image(image_path):
@@ -331,22 +341,22 @@ def layerThree(path, score):
 
             # Update curr_score based on AI result
             if "authentic" in ai_result.lower():
-                curr_score += 35
+                print("complete 3 -------------------------------------------------------------------------------------------")
+
+                return 1
             else:
-                curr_score += 0
+                print("complete 3 -------------------------------------------------------------------------------------------")
+                return 0
         else:
             print("No QR Code found. Unable to authenticate using AI.")
-            curr_score += 0
-            ai_result = "No QR Code data available."
-
-        # Ensure three values are returned
-        print("complete 3 -------------------------------------------------------------------------------------------")
-        return score + curr_score  # Return the updated score
+            print("complete 3 -------------------------------------------------------------------------------------------")
+            return 0
 
     finally:
         # Clean up the temporary file
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
 
 @app.route('/', methods=['GET', 'POST'])
 def upload():
