@@ -4,13 +4,74 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>File Upload</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f9f9f9;
+            color: #333;
+        }
+        h1 {
+            text-align: center;
+            color: #4CAF50;
+        }
+        form {
+            max-width: 500px;
+            margin: 20px auto;
+            padding: 15px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            display: block;
+            margin-bottom: 15px;
+        }
+        button {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .redirect-btn {
+            background-color: #007BFF;
+            margin-top: 15px;
+        }
+        .redirect-btn:hover {
+            background-color: #0056b3;
+        }
+        .button-container {
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
     <h1>Upload a Bill</h1>
-    <form action="/upload" method="post" enctype="multipart/form-data">
+    <form action="/" method="post" enctype="multipart/form-data">
         <label for="file">Choose file:</label>
         <input type="file" name="file" id="file" required>
-        <button type="submit">Upload</button>
+        <div class="button-container">
+            <button type="submit">Upload</button>
+            <button type="button" class="redirect-btn" onclick="window.location.href='/verification'">
+                View Verification Results
+            </button>
+        </div>
     </form>
 </body>
 </html>

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verification Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f9f9f9;
+            color: #333;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #4CAF50;
+            text-align: center;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .result {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s ease;
+        }
+        .result:hover {
+            transform: scale(1.02);
+        }
+        .result.authentic {
+            border-left: 5px solid green;
+        }
+        .result.fake {
+            border-left: 5px solid red;
+        }
+        .result p {
+            margin: 5px 0;
+        }
+        .no-results {
+            text-align: center;
+            color: #999;
+            font-size: 1.2em;
+            margin-top: 50px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>File Verification Results</h1>
+
+    <div class="container">
+        {% if results %}
+            {% for result in results %}
+                <div class="result {{ result.status }}">
+                    <h3>File: {{ result.file }}</h3>
+                    <p><strong>Status:</strong> {{ result.status | capitalize }}</p>
+                    <p><strong>Score:</strong> {{ result.score }}</p>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="no-results">No results available. Please verify files to see results.</p>
+        {% endif %}
+    </div>
+
+</body>
+</html>
