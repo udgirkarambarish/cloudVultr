@@ -47,56 +47,59 @@ def get_pdf_from_s3(bucket_name, object_key):
 def verification():
     result_status = ''
     bucket_name = 'bills'
+    local_path = None  # Define this variable to track the local file path
 
-    # try:
-    # Fetch the most recent file from the 'bills' bucket
-    response = s3.list_objects_v2(Bucket=bucket_name, Prefix='', MaxKeys=1, Delimiter='/')
-    if 'Contents' in response:
-        # Get the most recent file
-        most_recent_file = sorted(response['Contents'], key=lambda x: x['LastModified'], reverse=True)[0]
-        file_key = most_recent_file['Key']
+    try:
+        # Fetch the most recent file from the 'bills' bucket
+        response = s3.list_objects_v2(Bucket=bucket_name, Prefix='', MaxKeys=1, Delimiter='/')
+        if 'Contents' in response:
+            # Get the most recent file
+            most_recent_file = sorted(response['Contents'], key=lambda x: x['LastModified'], reverse=True)[0]
+            file_key = most_recent_file['Key']
 
-        print(f"Most recent file key: {file_key}")  # Debug
+            print(f"Most recent file key: {file_key}")  # Debug
 
-        # Download the file
-        file_name = secure_filename(file_key.split('/')[-1])
-        local_path = os.path.join(os.getcwd(), file_name)
-        s3.download_file(bucket_name, file_key, local_path)
+            # Download the file
+            file_name = secure_filename(file_key.split('/')[-1])
+            local_path = os.path.join(os.getcwd(), file_name)
+            s3.download_file(bucket_name, file_key, local_path)
 
-        # Process the file based on type
-        if file_name.lower().endswith('.pdf'):
-            score = layerTwo(local_path)
-            target_bucket = 'authentic' if score else 'fake'
-        elif file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-            score1 = layerOne(local_path)
-            print("Done with layerOne ++++++++++++++++++++++++++++++++++++++++++++")
-            score2 = layerTwo(local_path)
-            print("Done with layerTwo ++++++++++++++++++++++++++++++++++++++++++++")
-            score3 = layerThree(local_path)
-            print("Done with layerThree ++++++++++++++++++++++++++++++++++++++++++++")
-            target_bucket = 'authentic' if (score1 and score2) and score3 else 'fake'
+            # Process the file based on type
+            if file_name.lower().endswith('.pdf'):
+                score = layerTwo(local_path)
+                target_bucket = 'authentic' if score else 'fake'
+            elif file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                score1 = layerOne(local_path)
+                print(score1)
+                score2 = layerTwo(local_path)
+                print(score2)
+                score3 = layerThree(local_path)
+                print(score3)
+                target_bucket = 'authentic' if (score1 and score2) or score3 else 'fake'
+            else:
+                raise ValueError("Unsupported file type")
+
+            # Copy and delete the file
+            print(f"Copying file to bucket: {target_bucket}")  # Debug
+            s3.copy_object(Bucket=target_bucket, CopySource={'Bucket': bucket_name, 'Key': file_key}, Key=file_key)
+            s3.delete_object(Bucket=bucket_name, Key=file_key)
+            result_status = target_bucket
         else:
-            raise ValueError("Unsupported file type")
+            print("No files found in the 'bills' bucket")
+            return render_template('verification.html', results=None)
 
-        # Copy and delete the file
-        print(f"Copying file to bucket: {target_bucket}")  # Debug
-        s3.copy_object(Bucket=target_bucket, CopySource={'Bucket': bucket_name, 'Key': file_key}, Key=file_key)
-        s3.delete_object(Bucket=bucket_name, Key=file_key)
-        result_status = target_bucket
-    else:
-        print("No files found in the 'bills' bucket")
+        result = {'file': file_name, 'status': result_status}
+        return render_template('verification.html', results=[result])
+
+    except Exception as e:
+        print(f"Unexpected error: {e}")
         return render_template('verification.html', results=None)
 
-    result = {'file': file_name, 'status': result_status}
-    return render_template('verification.html', results=[result])
-
-    # except botocore.exceptions.ClientError as e:
-    #     print(f"AWS ClientError: {e}")
-    # except Exception as e:
-    #     print(f"Unexpected error: {e}")
-
-    # return render_template('verification.html', results=None)
-
+    finally:
+        # Ensure the locally downloaded file is deleted
+        if local_path and os.path.exists(local_path):
+            os.remove(local_path)
+            print(f"Deleted local file: {local_path}")
 
 # In layerOne function:
 def layerOne(path):
@@ -148,10 +151,10 @@ def layerOne(path):
         # Decision based on prediction threshold
         if prediction > 0.5:
             print(f"Prediction: {prediction} (Authentic)")
-            return 0  # No change to score, image considered authentic
+            return 1  # No change to score, image considered authentic
         else:
             print(f"Prediction: {prediction} (Fake/Low Quality)")
-            return 1  # Add 35 to score for low-quality prediction
+            return 0  # Add 35 to score for low-quality prediction
 
     # Call predict_image with the local image path
     print("Starting prediction on local image...")
@@ -171,6 +174,7 @@ def layerTwo(path):
 
     # Function to detect file type
     def detect_file_type(file_path):
+        print('detect_file_type')
         if file_path.lower().endswith('.pdf'):
             return 'pdf'
         elif file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.gif')):
@@ -179,6 +183,7 @@ def layerTwo(path):
 
     # Function to extract image metadata
     def get_image_metadata(image_path):
+        print('get_image_metadata')
         metadata = {}
         try:
             # Open the image and extract EXIF data
@@ -210,6 +215,7 @@ def layerTwo(path):
 
     # Function to extract PDF metadata
     def check_pdf_metadata(file_path):
+        print('check_pdf_metadata')
         suspicious_metadata = []
         try:
             doc = fitz.open(file_path)
@@ -239,23 +245,13 @@ def layerTwo(path):
         except Exception as e:
             print(f"Error processing PDF metadata: {e}")
 
-    # Main function to process the file
-    if path.startswith("s3://"):  # Check if the path is an S3 URL
-        try:
-            local_file_path = download_s3_file(path)
-        except ValueError as e:
-            print(f"Error: {e}")
-            return 0  # Return curr_score without modification in case of error
-    else:
-        local_file_path = path
-
-    file_type = detect_file_type(local_file_path)
+    file_type = detect_file_type(path)
     if file_type == 'pdf':
         print("Starting check_pdf_metadata --------------")
-        return check_pdf_metadata(local_file_path)
+        return check_pdf_metadata(path)
     elif file_type == 'image':
         print("Starting get_image_metadata --------------")
-        return get_image_metadata(local_file_path)
+        return get_image_metadata(path)
     else:
         print("Unsupported file format.")
 
