@@ -48,76 +48,73 @@ def verification():
     result_status = ''
     bucket_name = 'bills'
 
-    try:
-        # Fetch the most recent file from the 'bills' bucket
-        response = s3.list_objects_v2(Bucket=bucket_name, Prefix='', MaxKeys=1, Delimiter='/')
-        if 'Contents' in response:
-            # Get the most recent file
-            most_recent_file = sorted(response['Contents'], key=lambda x: x['LastModified'], reverse=True)[0]
-            file_key = most_recent_file['Key']
+    # try:
+    # Fetch the most recent file from the 'bills' bucket
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix='', MaxKeys=1, Delimiter='/')
+    if 'Contents' in response:
+        # Get the most recent file
+        most_recent_file = sorted(response['Contents'], key=lambda x: x['LastModified'], reverse=True)[0]
+        file_key = most_recent_file['Key']
 
-            print(f"Most recent file key: {file_key}")  # Debug
+        print(f"Most recent file key: {file_key}")  # Debug
 
-            # Download the file
-            file_name = secure_filename(file_key.split('/')[-1])
-            local_path = os.path.join(os.getcwd(), file_name)
-            s3.download_file(bucket_name, file_key, local_path)
+        # Download the file
+        file_name = secure_filename(file_key.split('/')[-1])
+        local_path = os.path.join(os.getcwd(), file_name)
+        s3.download_file(bucket_name, file_key, local_path)
 
-            # Process the file based on type
-            if file_name.lower().endswith('.pdf'):
-                score = layerTwo(local_path)
-                target_bucket = 'authentic' if score else 'fake'
-            elif file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
-                score1 = layerOne(local_path)
-                score2 = layerTwo(local_path)
-                score3 = layerThree(local_path)
-                target_bucket = 'authentic' if score1 or score2 and score3 else 'fake'
-            else:
-                raise ValueError("Unsupported file type")
-
-            # Copy and delete the file
-            print(f"Copying file to bucket: {target_bucket}")  # Debug
-            s3.copy_object(Bucket=target_bucket, CopySource={'Bucket': bucket_name, 'Key': file_key}, Key=file_key)
-            s3.delete_object(Bucket=bucket_name, Key=file_key)
-            result_status = target_bucket
+        # Process the file based on type
+        if file_name.lower().endswith('.pdf'):
+            score = layerTwo(local_path)
+            target_bucket = 'authentic' if score else 'fake'
+        elif file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+            score1 = layerOne(local_path)
+            print("Done with layerOne ++++++++++++++++++++++++++++++++++++++++++++")
+            score2 = layerTwo(local_path)
+            print("Done with layerTwo ++++++++++++++++++++++++++++++++++++++++++++")
+            score3 = layerThree(local_path)
+            print("Done with layerThree ++++++++++++++++++++++++++++++++++++++++++++")
+            target_bucket = 'authentic' if (score1 and score2) and score3 else 'fake'
         else:
-            print("No files found in the 'bills' bucket")
-            return render_template('verification.html', results=None)
+            raise ValueError("Unsupported file type")
 
-        result = {'file': file_name, 'status': result_status}
-        return render_template('verification.html', results=[result])
+        # Copy and delete the file
+        print(f"Copying file to bucket: {target_bucket}")  # Debug
+        s3.copy_object(Bucket=target_bucket, CopySource={'Bucket': bucket_name, 'Key': file_key}, Key=file_key)
+        s3.delete_object(Bucket=bucket_name, Key=file_key)
+        result_status = target_bucket
+    else:
+        print("No files found in the 'bills' bucket")
+        return render_template('verification.html', results=None)
 
-    except botocore.exceptions.ClientError as e:
-        print(f"AWS ClientError: {e}")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
+    result = {'file': file_name, 'status': result_status}
+    return render_template('verification.html', results=[result])
 
-    return render_template('verification.html', results=None)
+    # except botocore.exceptions.ClientError as e:
+    #     print(f"AWS ClientError: {e}")
+    # except Exception as e:
+    #     print(f"Unexpected error: {e}")
+
+    # return render_template('verification.html', results=None)
 
 
 # In layerOne function:
 def layerOne(path):
+    print("Starting Layer One Processing...")
+
     import numpy as np
     import tensorflow as tf
-    import cv2  # Ensure OpenCV is imported for image processing
-
-    # Extract bucket name and object key from the S3 path
-    try:
-        s3_path_parts = path.replace("s3://", "").split("/", 1)
-        bucket_name, object_key = s3_path_parts
-    except ValueError:
-        return "Invalid S3 path format"
+    import cv2  # OpenCV for image processing
 
     # Function to preprocess image
-    def preprocess_image(image_data):
-        # Convert byte data to a NumPy array
-        nparr = np.frombuffer(image_data, np.uint8)
-        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)  # Read the image from byte data
+    def preprocess_image(image_path):
+        # Load the image from the given local path
+        image = cv2.imread(image_path)
 
         # Check if the image was successfully loaded
         if image is None:
-            raise ValueError("Image could not be loaded. The byte data may be corrupted or in an invalid format.")
-        
+            raise ValueError(f"Image at path '{image_path}' could not be loaded. Please check the file path.")
+
         # If the image is grayscale (i.e., it has only 1 channel), convert it to 3 channels (RGB)
         if len(image.shape) == 2:  # Grayscale image has 2 dimensions
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)  # Convert grayscale to RGB
@@ -133,14 +130,10 @@ def layerOne(path):
 
         return image
 
-
     # Predict authenticity of the image
-    def predict_image(bucket_name, object_key):
+    def predict_image(local_path):
         # Fetch and preprocess the image
-        image_data = get_image_from_s3(bucket_name, object_key)
-        if not image_data:
-            return "Image not found in S3."
-        image = preprocess_image(image_data)  # Assumes you have a preprocess_image function
+        image = preprocess_image(local_path)  # Load and preprocess the local image
         image = np.expand_dims(image, axis=0)
 
         # Perform inference
@@ -152,19 +145,20 @@ def layerOne(path):
         interpreter.invoke()
         prediction = interpreter.get_tensor(output_details[0]['index'])[0][0]
 
+        # Decision based on prediction threshold
         if prediction > 0.5:
-            print("complete 1 -------------------------------------------------------------------------------------------")
-            return 0  # No change to score, returning as it is
+            print(f"Prediction: {prediction} (Authentic)")
+            return 0  # No change to score, image considered authentic
         else:
-            print("complete 1 -------------------------------------------------------------------------------------------")
-            return 1  # Add 35 to score when prediction is low
+            print(f"Prediction: {prediction} (Fake/Low Quality)")
+            return 1  # Add 35 to score for low-quality prediction
 
-    # Update curr_score using the result of predict_image
-    score = predict_image(bucket_name, object_key)
-    print("complete 1 -------------------------------------------------------------------------------------------")
+    # Call predict_image with the local image path
+    print("Starting prediction on local image...")
+    score = predict_image(path)
+    print("Prediction complete.")
 
     return score
-
 
 # Main function to process the file
 def layerTwo(path):
@@ -245,8 +239,6 @@ def layerTwo(path):
         except Exception as e:
             print(f"Error processing PDF metadata: {e}")
 
-        return 0
-
     # Main function to process the file
     if path.startswith("s3://"):  # Check if the path is an S3 URL
         try:
@@ -259,31 +251,15 @@ def layerTwo(path):
 
     file_type = detect_file_type(local_file_path)
     if file_type == 'pdf':
+        print("Starting check_pdf_metadata --------------")
         return check_pdf_metadata(local_file_path)
     elif file_type == 'image':
+        print("Starting get_image_metadata --------------")
         return get_image_metadata(local_file_path)
     else:
         print("Unsupported file format.")
 
-    # Main function to process the file
-    if path.startswith("s3://"):  # Check if the path is an S3 URL
-        try:
-            local_file_path = download_s3_file(path)
-        except ValueError as e:
-            print(f"Error: {e}")
-            return 0  # Return the score without modification in case of an error
-    else:
-        local_file_path = path
 
-    file_type = detect_file_type(local_file_path)
-    if file_type == 'pdf':
-        return check_pdf_metadata(local_file_path)
-    elif file_type == 'image':
-        return get_image_metadata(local_file_path)
-    else:
-        print("Unsupported file format.")
-
-    print("complete 2 -------------------------------------------------------------------------------------------")
 
 def layerThree(path):
 
@@ -341,15 +317,15 @@ def layerThree(path):
 
             # Update curr_score based on AI result
             if "authentic" in ai_result.lower():
-                print("complete 3 -------------------------------------------------------------------------------------------")
+                print("completed 3 -------------------------------------------------------------------------------------------")
 
                 return 1
             else:
-                print("complete 3 -------------------------------------------------------------------------------------------")
+                print("completed 3 -------------------------------------------------------------------------------------------")
                 return 0
         else:
             print("No QR Code found. Unable to authenticate using AI.")
-            print("complete 3 -------------------------------------------------------------------------------------------")
+            print("completed 3 -------------------------------------------------------------------------------------------")
             return 0
 
     finally:
