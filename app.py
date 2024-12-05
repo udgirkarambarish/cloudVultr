@@ -24,13 +24,13 @@ import tensorflow as tf
 app = Flask(__name__)
 
 # Initialize the Gemini API with the hardcoded API key
-genai.configure(api_key='AIzaSyAIlrYllmYs9Lhjt_CaLa4-tTVJ-7CcyNA')
+genai.configure(api_key='')
 
 s3 = boto3.client(
     's3',
-    endpoint_url='https://del1.vultrobjects.com',  # Your Object Storage hostname
-    aws_access_key_id='9CDGUYGZRK12D4VO084M',     # Your access key
-    aws_secret_access_key='KTiaIBhDCDG7anxdmt5u5Bs72jukKShs1DifZBG8'  # Your secret key
+    # endpoint_url='https://s3.ap-south-1.amazonaws.com',  # Your Object Storage hostname
+    aws_access_key_id='',     # Your access key
+    aws_secret_access_key=''  # Your secret key
 )
 
 # Helper function to get image from S3
@@ -46,11 +46,11 @@ def get_pdf_from_s3(bucket_name, object_key):
 @app.route('/verification', methods=['GET', 'POST'])
 def verification():
     result_status = ''
-    bucket_name = 'bills'
+    bucket_name = 'general-bills'
     local_path = None  # Define this variable to track the local file path
 
     try:
-        # Fetch the most recent file from the 'bills' bucket
+        # Fetch the most recent file from the 'general-bills' bucket
         response = s3.list_objects_v2(Bucket=bucket_name, Prefix='', MaxKeys=1, Delimiter='/')
         if 'Contents' in response:
             # Get the most recent file
@@ -67,7 +67,7 @@ def verification():
             # Process the file based on type
             if file_name.lower().endswith('.pdf'):
                 score = layerTwo(local_path)
-                target_bucket = 'authentic' if score else 'fake'
+                target_bucket = 'authentic-bills' if score else 'fake-bills'
             elif file_name.lower().endswith(('.png', '.jpg', '.jpeg')):
                 score1 = layerOne(local_path)
                 print(score1)
@@ -75,7 +75,7 @@ def verification():
                 print(score2)
                 score3 = layerThree(local_path)
                 print(score3)
-                target_bucket = 'authentic' if (score1 and score2) or score3 else 'fake'
+                target_bucket = 'authentic-bills' if (score1 and score2) or score3 else 'fake-bills'
             else:
                 raise ValueError("Unsupported file type")
 
@@ -85,7 +85,7 @@ def verification():
             s3.delete_object(Bucket=bucket_name, Key=file_key)
             result_status = target_bucket
         else:
-            print("No files found in the 'bills' bucket")
+            print("No files found in the 'general-bills' bucket")
             return render_template('verification.html', results=None)
 
         result = {'file': file_name, 'status': result_status}
@@ -313,10 +313,12 @@ def layerThree(path):
 
             # Update curr_score based on AI result
             if "authentic" in ai_result.lower():
+                print("authentic")
                 print("completed 3 -------------------------------------------------------------------------------------------")
 
                 return 1
             else:
+                print("fake")
                 print("completed 3 -------------------------------------------------------------------------------------------")
                 return 0
         else:
@@ -336,7 +338,7 @@ def upload():
         try:
             file = request.files['file']
             if file:
-                bucket_name = 'bills'  # Ensure this is your exact bucket name
+                bucket_name = 'general-bills'  # Ensure this is your exact bucket name
                 
                 # Sanitize the filename
                 import os
